@@ -1,13 +1,25 @@
 import {
     type Accessor,
     createEffect,
-    createMemo,
     createSignal,
     on,
-    type Setter,
-    Show,
+    onCleanup,
 } from "solid-js";
 import { LovelyButton } from "./LovelyButton.tsx";
+
+type WsMessage = {
+    type:
+        | "welcome"
+        | "join"
+        | "leave"
+        | "offer"
+        | "answer"
+        | "new-ice-candidate";
+    from?: string;
+    to?: string;
+    // deno-lint-ignore no-explicit-any
+    payload?: any;
+};
 
 export function ShareControls(
     props: {
@@ -16,99 +28,160 @@ export function ShareControls(
         turnUsername: Accessor<string>;
         turnPassword: Accessor<string>;
         ws: Accessor<WebSocket | undefined>;
-        setPc: Setter<RTCPeerConnection | undefined>;
     },
 ) {
-    const turnAddress = props.turnAddress;
-    const turnUsername = props.turnUsername;
-    const turnPassword = props.turnPassword;
-    const ws = props.ws;
-
     const [mediaStream, setMediaStream] = createSignal<MediaStream | null>(
         null,
     );
-    const isSharing = createMemo(() => mediaStream() != null);
+    const isSharing = () => mediaStream() !== null;
+    const peers = new Set<string>();
+    const peerConnections = new Map<string, RTCPeerConnection>();
 
     createEffect(on(mediaStream, () => {
         const vid = document.querySelector("#vid") as HTMLVideoElement;
         vid.srcObject = mediaStream();
     }));
 
-    function startShare() {
-        navigator.mediaDevices.getDisplayMedia({
-            // audio: true,
-            video: true,
-        })
-            .then((media) => {
-                // console.log(media);
-                setMediaStream(media);
-                media.getVideoTracks()[0].addEventListener("ended", () => {
-                    console.log("Share end.");
-                    setMediaStream(null);
-                });
-                const pc = new RTCPeerConnection({
-                    iceServers: [
-                        { "urls": "stun:stun.l.google.com:19302" },
-                        {
-                            urls: turnAddress(),
-                            username: turnUsername(),
-                            credential: turnPassword(),
-                        },
-                    ],
-                });
+    function getIceServers() {
+        return [
+            { urls: "stun:stun.l.google.com:19302" },
+            {
+                urls: props.turnAddress(),
+                username: props.turnUsername(),
+                credential: props.turnPassword(),
+            },
+        ];
+    }
 
-                media.getTracks().forEach((track) => {
-                    pc.addTrack(track, media);
-                });
+    function closeAllPeerConnections() {
+        for (const pc of peerConnections.values()) {
+            pc.close();
+        }
+        peerConnections.clear();
+    }
 
-                pc.addEventListener("icecandidate", (event) => {
-                    if (event.candidate) {
-                        // console.log(event.candidate);
-                        ws()!.send(
-                            JSON.stringify({
-                                type: "new-ice-candidate",
-                                payload: event.candidate,
-                            }),
-                        );
-                    }
-                });
-                props.setPc(pc);
-                return pc.createOffer().then((offer) => {
-                    pc.setLocalDescription(offer);
-                    return offer;
-                }).then((offer) => ws()!.send(JSON.stringify(offer)));
-            })
-            .catch((err) => console.warn(err));
+    async function createOfferForPeer(peerId: string) {
+        const media = mediaStream();
+        if (!media) return;
+        if (peerConnections.has(peerId)) return;
+
+        const pc = new RTCPeerConnection({ iceServers: getIceServers() });
+        peerConnections.set(peerId, pc);
+
+        media.getTracks().forEach((track) => {
+            pc.addTrack(track, media);
+        });
+
+        pc.addEventListener("icecandidate", (event) => {
+            if (event.candidate) {
+                props.ws()!.send(
+                    JSON.stringify({
+                        type: "new-ice-candidate",
+                        to: peerId,
+                        payload: event.candidate,
+                    }),
+                );
+            }
+        });
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        props.ws()!.send(
+            JSON.stringify({
+                type: "offer",
+                to: peerId,
+                payload: offer,
+            }),
+        );
+    }
+
+    function handleSignal(message: WsMessage) {
+        if (message.type === "welcome") {
+            peers.clear();
+            closeAllPeerConnections();
+            return;
+        }
+        if (message.type === "join" && message.from) {
+            peers.add(message.from);
+            if (isSharing()) {
+                void createOfferForPeer(message.from);
+            }
+            return;
+        }
+        if (message.type === "leave" && message.from) {
+            peers.delete(message.from);
+            const pc = peerConnections.get(message.from);
+            if (pc) {
+                pc.close();
+                peerConnections.delete(message.from);
+            }
+            return;
+        }
+        if (message.type === "answer" && message.from) {
+            const pc = peerConnections.get(message.from);
+            if (!pc) return;
+            // deno-lint-ignore no-explicit-any
+            const remoteDesc = new RTCSessionDescription(
+                message.payload as any,
+            );
+            void pc.setRemoteDescription(remoteDesc);
+            return;
+        }
+        if (message.type === "new-ice-candidate" && message.from) {
+            const pc = peerConnections.get(message.from);
+            if (!pc) return;
+            void pc.addIceCandidate(message.payload);
+        }
+    }
+
+    createEffect(() => {
+        const socket = props.ws();
+        if (!socket) return;
+        const onMessage = (e: MessageEvent) => {
+            const dataj = JSON.parse(e.data) as WsMessage;
+            handleSignal(dataj);
+        };
+        socket.addEventListener("message", onMessage);
+        onCleanup(() => {
+            socket.removeEventListener("message", onMessage);
+        });
+    });
+
+    async function startShare() {
+        try {
+            const media = await navigator.mediaDevices.getDisplayMedia({
+                // audio: true,
+                video: true,
+            });
+            setMediaStream(media);
+            media.getVideoTracks()[0].addEventListener("ended", () => {
+                console.log("Share end.");
+                setMediaStream(null);
+                closeAllPeerConnections();
+            });
+            for (const peerId of peers) {
+                await createOfferForPeer(peerId);
+            }
+        } catch (err) {
+            console.warn(err);
+        }
     }
 
     function stopShare() {
         if (mediaStream() === null) return;
         mediaStream()?.getVideoTracks()[0].stop();
         setMediaStream(null);
+        closeAllPeerConnections();
     }
 
     return (
-        <Show
-            when={isSharing()}
-            fallback={
-                <LovelyButton
-                    rotate={false}
-                    scale={false}
-                    onclick={startShare}
-                    disabled={props.disabled ?? false}
-                >
-                    共享屏幕
-                </LovelyButton>
-            }
+        <LovelyButton
+            rotate={false}
+            scale={false}
+            onclick={() => (isSharing() ? stopShare() : startShare())}
+            disabled={props.disabled ?? false}
         >
-            <LovelyButton
-                rotate={false}
-                scale={false}
-                onclick={stopShare}
-                disabled={props.disabled ?? false}
-            >
-                结束共享
-            </LovelyButton>
-        </Show>
+            {isSharing() ? "结束共享" : "共享屏幕"}
+        </LovelyButton>
     );
 }

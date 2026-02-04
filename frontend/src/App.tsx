@@ -30,8 +30,7 @@ export default function App() {
                         setTurnAddress={setTurnAddress}
                         setTurnUsername={setTurnUsername}
                         setTurnPassword={setTurnPassword}
-                    >
-                    </TurnControls>
+                    />
                 </div>
                 <ShareControls
                     disabled={roomId() === ""}
@@ -39,9 +38,7 @@ export default function App() {
                     turnUsername={turnUsername}
                     turnPassword={turnPassword}
                     ws={ws}
-                    setPc={setPc}
-                >
-                </ShareControls>
+                />
                 <div class="place-self-start">
                     <RoomControls
                         roomId={roomId}
@@ -52,8 +49,7 @@ export default function App() {
                         setTargetRoomId={setTargetRoomId}
                         setWs={setWs}
                         setPc={setPc}
-                    >
-                    </RoomControls>
+                    />
                 </div>
             </div>
             <video
@@ -62,8 +58,7 @@ export default function App() {
                 autoplay
                 playsinline
                 controls={false}
-            >
-            </video>
+            />
         </div>
     );
 }

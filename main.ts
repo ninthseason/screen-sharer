@@ -5,9 +5,9 @@ const router = new Router();
 
 /**
  * 房间结构：
- * roomId -> Set<WebSocket>
+ * roomId -> Map<peerId, WebSocket>
  */
-const rooms = new Map<string, Set<WebSocket>>();
+const rooms = new Map<string, Map<string, WebSocket>>();
 
 /**
  * 生成 6 位随机房间号
@@ -26,7 +26,7 @@ router.post("/room", (ctx) => {
     roomId = generateRoomId();
   } while (rooms.has(roomId) && rooms.get(roomId)?.size != 0);
 
-  rooms.set(roomId, new Set());
+  rooms.set(roomId, new Map());
 
   ctx.response.body = {
     roomId,
@@ -46,14 +46,15 @@ router.get("/ws", (ctx) => {
 
   const ws = ctx.upgrade();
   const peers = rooms.get(roomId)!;
+  const peerId = crypto.randomUUID();
 
-  peers.add(ws);
+  peers.set(peerId, ws);
 
   ws.onopen = () => {
-    ws.send(JSON.stringify({ type: "welcome" }));
-    for (const peer of peers) {
-      if (peer !== ws && peer.readyState === WebSocket.OPEN) {
-        peer.send(JSON.stringify({ type: "join" }));
+    ws.send(JSON.stringify({ type: "welcome", payload: { id: peerId } }));
+    for (const [otherId, peer] of peers) {
+      if (otherId !== peerId && peer.readyState === WebSocket.OPEN) {
+        peer.send(JSON.stringify({ type: "join", from: peerId }));
       }
     }
   };
@@ -65,22 +66,34 @@ router.get("/ws", (ctx) => {
     } catch {
       return;
     }
+    if (typeof message !== "object" || message === null) {
+      return;
+    }
+
+    const payload = { ...message, from: peerId };
+    if (payload.to) {
+      const target = peers.get(payload.to);
+      if (target && target.readyState === WebSocket.OPEN) {
+        target.send(JSON.stringify(payload));
+      }
+      return;
+    }
 
     // 转发给同房间其他成员
-    for (const peer of peers) {
-      if (peer !== ws && peer.readyState === WebSocket.OPEN) {
-        peer.send(JSON.stringify(message));
+    for (const [otherId, peer] of peers) {
+      if (otherId !== peerId && peer.readyState === WebSocket.OPEN) {
+        peer.send(JSON.stringify(payload));
       }
     }
   };
 
   ws.onclose = () => {
-    peers.delete(ws);
+    peers.delete(peerId);
 
     // 通知其他成员
-    for (const peer of peers) {
+    for (const peer of peers.values()) {
       if (peer.readyState === WebSocket.OPEN) {
-        peer.send(JSON.stringify({ type: "leave" }));
+        peer.send(JSON.stringify({ type: "leave", from: peerId }));
       }
     }
 

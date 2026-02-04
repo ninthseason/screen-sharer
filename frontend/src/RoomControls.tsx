@@ -9,6 +9,10 @@ type WsMessage = {
         | "offer"
         | "answer"
         | "new-ice-candidate";
+    from?: string;
+    to?: string;
+    // deno-lint-ignore no-explicit-any
+    payload?: any;
 };
 
 export function RoomControls(
@@ -23,12 +27,9 @@ export function RoomControls(
         setPc: Setter<RTCPeerConnection | undefined>;
     },
 ) {
-    const roomId = props.roomId;
-    const setRoomId = props.setRoomId;
-    const targetRoomId = props.targetRoomId;
-    const setTargetRoomId = props.setTargetRoomId;
+    let hostPeerId = "";
     createEffect(() => {
-        localStorage.setItem("targetRoomId", targetRoomId());
+        localStorage.setItem("targetRoomId", props.targetRoomId());
     });
 
     async function createRoom() {
@@ -39,34 +40,29 @@ export function RoomControls(
             },
         );
         const respj = await resp.json();
-        console.log(respj);
+        // console.log(respj);
         const ws = new WebSocket(
             `${import.meta.env.VITE_SIGNAL_WS}/ws?roomId=${respj.roomId}`,
         );
-        props.setWs!(ws);
-        ws.onmessage = async (e) => {
+        props.setWs(ws);
+        ws.addEventListener("message", (e) => {
             const dataj = JSON.parse(e.data) as WsMessage;
             console.log(dataj.type);
             if (dataj.type === "welcome") {
-                setRoomId(respj.roomId);
-            } else if (dataj.type === "join") {
-                const offer = await props.pc()?.createOffer();
-                ws.send(JSON.stringify(offer));
-            } else if (dataj.type === "answer") {
-                // deno-lint-ignore no-explicit-any
-                const remoteDesc = new RTCSessionDescription(dataj as any);
-                await props.pc()!.setRemoteDescription(remoteDesc);
+                props.setRoomId(respj.roomId);
             }
-        };
+        });
 
         ws.onclose = () => {
-            setRoomId("");
+            props.setRoomId("");
+            props.setPc(undefined);
+            hostPeerId = "";
         };
     }
 
     function joinRoom() {
         const ws = new WebSocket(
-            `${import.meta.env.VITE_SIGNAL_WS}/ws?roomId=${targetRoomId()}`,
+            `${import.meta.env.VITE_SIGNAL_WS}/ws?roomId=${props.targetRoomId()}`,
         );
         const pc = new RTCPeerConnection();
         pc.addEventListener("track", (event) => {
@@ -74,27 +70,52 @@ export function RoomControls(
             (document.querySelector("#vid") as HTMLVideoElement).srcObject =
                 remoteStream;
         });
-        props.setWs!(ws);
-        ws.onmessage = async (e) => {
+        pc.addEventListener("icecandidate", (event) => {
+            if (!event.candidate || hostPeerId === "") return;
+            ws.send(
+                JSON.stringify({
+                    type: "new-ice-candidate",
+                    to: hostPeerId,
+                    payload: event.candidate,
+                }),
+            );
+        });
+        props.setWs(ws);
+        props.setPc(pc);
+        ws.addEventListener("message", async (e) => {
             const dataj = JSON.parse(e.data) as WsMessage;
             console.log(dataj.type);
             if (dataj.type === "welcome") {
-                setRoomId(targetRoomId());
-            } else if (dataj.type === "offer") {
+                props.setRoomId(props.targetRoomId());
+                return;
+            }
+            if (dataj.type === "offer") {
+                hostPeerId = dataj.from ?? hostPeerId;
                 // deno-lint-ignore no-explicit-any
-                const remoteDesc = new RTCSessionDescription(dataj as any);
+                const remoteDesc = new RTCSessionDescription(
+                    dataj.payload as any,
+                );
                 await pc.setRemoteDescription(remoteDesc);
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
-                props.ws()!.send(JSON.stringify(answer));
-            } else if (dataj.type === "new-ice-candidate") {
-                // deno-lint-ignore no-explicit-any
-                await pc.addIceCandidate((dataj as any).payload);
+                props.ws()!.send(
+                    JSON.stringify({
+                        type: "answer",
+                        to: hostPeerId,
+                        payload: answer,
+                    }),
+                );
+                return;
             }
-        };
+            if (dataj.type === "new-ice-candidate") {
+                await pc.addIceCandidate(dataj.payload);
+            }
+        });
 
         ws.onclose = () => {
-            setRoomId("");
+            props.setRoomId("");
+            props.setPc(undefined);
+            hostPeerId = "";
         };
     }
 
@@ -108,11 +129,11 @@ export function RoomControls(
             <div>
                 房间号:{" "}
                 <span class="text-[#85E900]">
-                    {roomId() === "" ? "未加入" : roomId()}
+                    {props.roomId() === "" ? "未加入" : props.roomId()}
                 </span>
             </div>
             <Show
-                when={roomId() === ""}
+                when={props.roomId() === ""}
                 fallback={
                     <LovelyButton onclick={exitRoom}>退出房间</LovelyButton>
                 }
@@ -122,9 +143,9 @@ export function RoomControls(
                     type="text"
                     placeholder="输入房间号"
                     oninput={(e) => {
-                        setTargetRoomId(e.target.value);
+                        props.setTargetRoomId(e.target.value);
                     }}
-                    value={targetRoomId()}
+                    value={props.targetRoomId()}
                 />
                 <LovelyButton onclick={joinRoom}>加入房间</LovelyButton>
                 <LovelyButton onclick={createRoom}>创建房间</LovelyButton>
