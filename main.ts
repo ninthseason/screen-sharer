@@ -69,7 +69,7 @@ router.get("/ws", (ctx) => {
     if (typeof message !== "object" || message === null) {
       return;
     }
-
+    console.log(message);
     const payload = { ...message, from: peerId };
     if (payload.to) {
       const target = peers.get(payload.to);
@@ -107,5 +107,5 @@ router.get("/ws", (ctx) => {
 app.use(router.routes());
 app.use(router.allowedMethods());
 
-console.log("WebRTC signaling server running on http://localhost:8000");
-await app.listen({ port: 8000, hostname: "127.0.0.1" });
+console.log("WebRTC signaling server running");
+await app.listen({ port: 8000 });
