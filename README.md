@@ -9,7 +9,6 @@
 
 ## Prerequisites
 - Deno 1.40+（用于信令服务器）
-- Node.js 18+（用于前端构建/运行）
 
 ## Project Structure
 - `main.ts`：信令服务器
