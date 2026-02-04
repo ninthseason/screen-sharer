@@ -1,0 +1,14 @@
+@import url("https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&family=Zhi+Mang+Xing&display=swap");
+@import "tailwindcss";
+
+@theme {
+  --font-cool: "ZCOOL KuaiLe", sans-serif;
+  --color-base-100: #1F1F1F;
+  --color-base-200: #181818;
+  --color-base-300: #111111;
+}
+
+:root {
+  background-color: #313F2C;
+  color: #FBFEFF;
+}
