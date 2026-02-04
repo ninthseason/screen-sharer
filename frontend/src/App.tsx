@@ -19,6 +19,7 @@ export default function App() {
     );
     const [ws, setWs] = createSignal<WebSocket>();
     const [pc, setPc] = createSignal<RTCPeerConnection>();
+    const [isHost, setIsHost] = createSignal(false);
     return (
         <div class="font-cool grid grid-rows-[auto_1fr] place-items-center gap-2 m-2">
             <div class="grid grid-cols-3 gap-2">
@@ -33,7 +34,8 @@ export default function App() {
                     />
                 </div>
                 <ShareControls
-                    disabled={roomId() === ""}
+                    disabled={!isHost()}
+                    isHost={isHost}
                     turnAddress={turnAddress}
                     turnUsername={turnUsername}
                     turnPassword={turnPassword}
@@ -49,6 +51,7 @@ export default function App() {
                         setTargetRoomId={setTargetRoomId}
                         setWs={setWs}
                         setPc={setPc}
+                        setIsHost={setIsHost}
                     />
                 </div>
             </div>

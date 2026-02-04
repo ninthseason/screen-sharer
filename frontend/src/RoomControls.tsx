@@ -8,7 +8,8 @@ type WsMessage = {
         | "leave"
         | "offer"
         | "answer"
-        | "new-ice-candidate";
+        | "new-ice-candidate"
+        | "share-stopped";
     from?: string;
     to?: string;
     // deno-lint-ignore no-explicit-any
@@ -25,6 +26,7 @@ export function RoomControls(
         setTargetRoomId: Setter<string>;
         setWs: Setter<WebSocket | undefined>;
         setPc: Setter<RTCPeerConnection | undefined>;
+        setIsHost: Setter<boolean>;
     },
 ) {
     let hostPeerId = "";
@@ -45,6 +47,7 @@ export function RoomControls(
             `${import.meta.env.VITE_SIGNAL_WS}/ws?roomId=${respj.roomId}`,
         );
         props.setWs(ws);
+        props.setIsHost(true);
         ws.addEventListener("message", (e) => {
             const dataj = JSON.parse(e.data) as WsMessage;
             console.log(dataj.type);
@@ -57,6 +60,7 @@ export function RoomControls(
             props.setRoomId("");
             props.setPc(undefined);
             hostPeerId = "";
+            props.setIsHost(false);
         };
     }
 
@@ -65,10 +69,10 @@ export function RoomControls(
             `${import.meta.env.VITE_SIGNAL_WS}/ws?roomId=${props.targetRoomId()}`,
         );
         const pc = new RTCPeerConnection();
+        const video = document.querySelector("#vid") as HTMLVideoElement;
         pc.addEventListener("track", (event) => {
             const [remoteStream] = event.streams;
-            (document.querySelector("#vid") as HTMLVideoElement).srcObject =
-                remoteStream;
+            video.srcObject = remoteStream;
         });
         pc.addEventListener("icecandidate", (event) => {
             if (!event.candidate || hostPeerId === "") return;
@@ -82,6 +86,7 @@ export function RoomControls(
         });
         props.setWs(ws);
         props.setPc(pc);
+        props.setIsHost(false);
         ws.addEventListener("message", async (e) => {
             const dataj = JSON.parse(e.data) as WsMessage;
             console.log(dataj.type);
@@ -89,10 +94,14 @@ export function RoomControls(
                 props.setRoomId(props.targetRoomId());
                 return;
             }
+            if (dataj.type === "share-stopped") {
+                video.srcObject = null;
+                return;
+            }
             if (dataj.type === "offer") {
                 hostPeerId = dataj.from ?? hostPeerId;
-                // deno-lint-ignore no-explicit-any
                 const remoteDesc = new RTCSessionDescription(
+                    // deno-lint-ignore no-explicit-any
                     dataj.payload as any,
                 );
                 await pc.setRemoteDescription(remoteDesc);
@@ -116,11 +125,14 @@ export function RoomControls(
             props.setRoomId("");
             props.setPc(undefined);
             hostPeerId = "";
+            props.setIsHost(false);
         };
     }
 
     function exitRoom() {
+        props.ws()?.send(JSON.stringify({ type: "share-stopped" }));
         props.ws()?.close();
+        props.setIsHost(false);
     }
 
     return (

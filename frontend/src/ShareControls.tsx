@@ -14,7 +14,8 @@ type WsMessage = {
         | "leave"
         | "offer"
         | "answer"
-        | "new-ice-candidate";
+        | "new-ice-candidate"
+        | "share-stopped";
     from?: string;
     to?: string;
     // deno-lint-ignore no-explicit-any
@@ -24,6 +25,7 @@ type WsMessage = {
 export function ShareControls(
     props: {
         disabled?: boolean;
+        isHost: Accessor<boolean>;
         turnAddress: Accessor<string>;
         turnUsername: Accessor<string>;
         turnPassword: Accessor<string>;
@@ -41,6 +43,27 @@ export function ShareControls(
         const vid = document.querySelector("#vid") as HTMLVideoElement;
         vid.srcObject = mediaStream();
     }));
+
+    createEffect(() => {
+        if (props.isHost()) return;
+        if (isSharing()) {
+            stopShare();
+        }
+    });
+
+    createEffect(() => {
+        const socket = props.ws();
+        if (!socket) return;
+        const onClose = () => {
+            if (isSharing()) {
+                stopShare();
+            }
+        };
+        socket.addEventListener("close", onClose);
+        onCleanup(() => {
+            socket.removeEventListener("close", onClose);
+        });
+    });
 
     function getIceServers() {
         return [
@@ -120,8 +143,8 @@ export function ShareControls(
         if (message.type === "answer" && message.from) {
             const pc = peerConnections.get(message.from);
             if (!pc) return;
-            // deno-lint-ignore no-explicit-any
             const remoteDesc = new RTCSessionDescription(
+                // deno-lint-ignore no-explicit-any
                 message.payload as any,
             );
             void pc.setRemoteDescription(remoteDesc);
@@ -172,6 +195,7 @@ export function ShareControls(
         mediaStream()?.getVideoTracks()[0].stop();
         setMediaStream(null);
         closeAllPeerConnections();
+        props.ws()?.send(JSON.stringify({ type: "share-stopped" }));
     }
 
     return (
