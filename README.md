@@ -4,6 +4,8 @@
 
 ![](./doc/show.png)
 
+Online demo: https://ninthseason.github.io/screen-sharer-page-test/
+
 ## Features
 - 房间创建/加入
 - 房主一对多屏幕分享
