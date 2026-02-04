@@ -2,6 +2,7 @@ import { createSignal } from "solid-js";
 import { TurnControls } from "./TurnControls.tsx";
 import { ShareControls } from "./ShareControls.tsx";
 import { RoomControls } from "./RoomControls.tsx";
+import { GithubLink } from "./GithubLink.tsx";
 
 export default function App() {
     const [roomId, setRoomId] = createSignal("");
@@ -22,7 +23,8 @@ export default function App() {
     const [isHost, setIsHost] = createSignal(false);
     return (
         <div class="font-cool grid grid-rows-[auto_1fr] place-items-center gap-2 m-2">
-            <div class="grid grid-cols-3 gap-2">
+            <div class="grid grid-cols-[auto_1fr_1fr_1fr_auto] gap-2 w-full">
+                <div></div>
                 <div class="place-self-end">
                     <TurnControls
                         turnAddress={turnAddress}
@@ -54,6 +56,7 @@ export default function App() {
                         setIsHost={setIsHost}
                     />
                 </div>
+                <GithubLink />
             </div>
             <video
                 id="vid"
