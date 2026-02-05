@@ -27,12 +27,26 @@ export function RoomControls(
         setWs: Setter<WebSocket | undefined>;
         setPc: Setter<RTCPeerConnection | undefined>;
         setIsHost: Setter<boolean>;
+        turnAddress: Accessor<string>;
+        turnUsername: Accessor<string>;
+        turnPassword: Accessor<string>;
     },
 ) {
     let hostPeerId = "";
     createEffect(() => {
         localStorage.setItem("targetRoomId", props.targetRoomId());
     });
+
+    function getIceServers() {
+        return [
+            { urls: "stun:stun.l.google.com:19302" },
+            {
+                urls: props.turnAddress(),
+                username: props.turnUsername(),
+                credential: props.turnPassword(),
+            },
+        ];
+    }
 
     async function createRoom() {
         const resp = await fetch(
@@ -68,13 +82,17 @@ export function RoomControls(
         const ws = new WebSocket(
             `${import.meta.env.VITE_SIGNAL_WS}/ws?roomId=${props.targetRoomId()}`,
         );
-        const pc = new RTCPeerConnection();
+        const pc = new RTCPeerConnection({
+            iceServers: getIceServers(),
+            // iceTransportPolicy: "relay",
+        });
         const video = document.querySelector("#vid") as HTMLVideoElement;
         pc.addEventListener("track", (event) => {
             const [remoteStream] = event.streams;
             video.srcObject = remoteStream;
         });
         pc.addEventListener("icecandidate", (event) => {
+            console.log(event.candidate, hostPeerId);
             if (!event.candidate || hostPeerId === "") return;
             ws.send(
                 JSON.stringify({

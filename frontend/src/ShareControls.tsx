@@ -88,7 +88,10 @@ export function ShareControls(
         if (!media) return;
         if (peerConnections.has(peerId)) return;
 
-        const pc = new RTCPeerConnection({ iceServers: getIceServers() });
+        const pc = new RTCPeerConnection({
+            iceServers: getIceServers(),
+            // iceTransportPolicy: "relay",
+        });
         peerConnections.set(peerId, pc);
 
         media.getTracks().forEach((track) => {

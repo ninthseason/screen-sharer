@@ -54,6 +54,9 @@ export default function App() {
                         setWs={setWs}
                         setPc={setPc}
                         setIsHost={setIsHost}
+                        turnAddress={turnAddress}
+                        turnUsername={turnUsername}
+                        turnPassword={turnPassword}
                     />
                 </div>
                 <GithubLink />
